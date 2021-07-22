@@ -1,0 +1,635 @@
+/*
+    SISTEMA DE REGA AUTOMATICO
+*/
+
+// ======================================================================
+// definicoes_sistema.h
+
+// Biblioteca para usar o LCD:
+#include <LiquidCrystal.h>
+#include <A2a.h>
+
+A2a arduinoMaster;
+
+#define endereco 0x08
+#define true  1
+#define false 0
+
+#define NUM_ESTADOS 2
+#define NUM_EVENTOS 5
+
+// ESTADOS
+#define ESPERA   0
+#define REGA     1
+
+// EVENTOS
+#define NENHUM_EVENTO -1
+#define UMIDADE_ACIMA  1
+#define CONFIG         2
+#define UMIDADE_ABAIXO 3
+#define TERMINO        4
+
+// ACOES
+#define NENHUMA_ACAO  -1
+#define EXIBIR         1
+#define PARAMETROS     2
+#define ABRIRDISPLAY   3
+#define FECHAREXIBIR   4
+
+
+/***********************************************************************
+Variaveis globais do sistema
+ ***********************************************************************/
+
+unsigned long delta_regas = 30000; //tempo entre regas
+unsigned int umidade_padrao = 70; // umidade padrao inicial
+unsigned long tempo_rega = 5000; // tempo regando de 5 segundos
+
+// Variaveis para checar se a umidade ideal e tempo entre regas mudaram
+bool nova_umidade = false; 
+unsigned int ideal_nova = umidade_padrao;
+bool novo_deltaRegas = false;
+unsigned int deltaRega_novo = delta_regas;
+
+// Iniciando as variáveis de tempo para cada evento
+unsigned long tempo_evento1 = millis();
+unsigned long tempo_evento2 = millis();
+unsigned long tempo_regando = 604800000; // 1 semana - valor inicial figurativo
+unsigned long tempo_evento4 = millis();
+
+// Configuração sensor de umidade:
+const int pinoSensor = A0;
+
+// Configuração pinos LCD:
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2; 
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+
+// ======================================================================
+// sensor.h
+
+class Sensor {
+  public:
+  Sensor();
+
+ /************************
+ devolverUmidade
+ Retorna umidade registrada pelo sensor
+ de umidade
+ entradas
+   nenhuma
+ saidas
+   umidade registrada pelo sensor
+  *************************/
+  
+  int devolverUmidade();
+
+};
+
+// ======================================================================
+// sensor.cpp
+
+Sensor::Sensor()
+{
+}
+
+ /************************
+ Sensor::devolverUmidade
+ Retorna umidade registrada pelo sensor
+ de umidade
+ entradas
+   nenhuma
+ saidas
+   umidade registrada pelo sensor
+ *************************/
+
+int Sensor::devolverUmidade()
+{
+    int umidadeSolo;
+    // Faz a leitura do sensor de umidade do solo
+    umidadeSolo = analogRead(pinoSensor);
+    // Converte a variação do sensor de 0 a 1023 para 0 a 100
+    umidadeSolo = map(umidadeSolo, 1023, 0, 0, 100);
+    return umidadeSolo; 
+};
+
+// ======================================================================
+// display.h
+
+class Display {
+  public:
+  Display();
+  
+  
+/************************
+ exibir
+ Exibe umidade tanto no display lcd
+ quanto no serial monitor
+ entradas
+  umidade: int a ser exibido 
+ saidas
+  nenhuma
+*************************/
+
+  void exibir(int umidade);
+};
+
+// ======================================================================
+// display.cpp
+
+Display::Display()
+{
+}
+
+/************************
+ Display::exibir
+ Exibe umidade tanto no display lcd
+ quanto no serial monitor
+ entradas
+   umidade: int a ser exibido
+ saidas
+   nenhuma
+*************************/
+
+void Display::exibir(int umidade)
+{
+  // exibe no serial monitor
+  Serial.print("exibindo umidade: ");
+  Serial.print(umidade);
+  Serial.println("%");
+  
+  // exibe no display
+  lcd.print("Umidade atual: ");
+  lcd.setCursor(7, 1);
+  lcd.print(umidade);
+  lcd.print("%");
+  delay(2000);
+  lcd.clear();
+};
+
+// ======================================================================
+// interface.h
+
+class Interface {
+  public:
+  Interface();
+
+/************************
+ setarUmidadePadrao
+ Define nova umidade padrao
+ entradas
+   int que será a nova umidade padrao
+ saidas
+   nenhuma
+*************************/
+  
+  void setarUmidadePadrao(unsigned int umidadeNova);
+  
+/************************
+ setarTempoRegas
+ Define novo tempo entre regas
+ entradas
+   valor em segundos do novo intervalo
+   entre regas
+ saidas
+   nenhuma
+*************************/
+  
+  void setarTempoRegas(unsigned long deltaRegas);
+  
+};
+
+// ======================================================================
+// interface.cpp
+
+Interface::Interface()
+{
+}
+
+/************************
+ Interface::setarUmidadePadrao
+ Define nova umidade padrao
+ entradas
+   int que será a nova umidade padrao
+ saidas
+   nenhuma
+*************************/
+
+void Interface::setarUmidadePadrao(unsigned int umidadeNova)
+{
+  // Exibe no serial monitor e altera variavel global
+  Serial.print("umidade anterior: ");
+  Serial.print(umidade_padrao);
+  Serial.println("%");
+  umidade_padrao = umidadeNova;
+  Serial.println("Umidade ideal nova: ");
+  Serial.print(umidade_padrao);
+  Serial.println("%");
+  
+  // Exibe no lcd
+  lcd.print("Umidade ideal");
+  lcd.setCursor(0, 1);
+  lcd.print("nova: ");
+  lcd.setCursor(7, 1);
+  lcd.print(umidade_padrao);
+  lcd.print("%");
+  delay(2300);
+  lcd.clear();
+}
+
+/************************
+ Interface::setarTempoRegas
+ Define novo tempo entre regas
+ entradas
+   valor em segundos do novo intervalo
+   entre regas
+ saidas
+   nenhuma
+*************************/
+
+void Interface::setarTempoRegas(unsigned long deltaRegas)
+{
+  // Exibe no serial monitor e altera variavel global
+  Serial.print("Tempo entre regas anterior: ");
+  Serial.print(delta_regas/1000);
+  Serial.println(" s");
+  delta_regas = deltaRegas;
+  Serial.println("Tempo entre regas novo:  ");
+  Serial.print(delta_regas/1000);
+  Serial.println(" s");
+  
+  // Exibe no lcd
+  lcd.print("Tempo entre");
+  lcd.setCursor(0, 1);
+  lcd.print("regas novo: ");
+  lcd.setCursor(12, 1);
+  lcd.print(delta_regas/1000);
+  lcd.print("s");
+  delay(2800);
+  lcd.clear();
+}
+
+// ======================================================================
+// atuador.h
+
+class Atuador {
+  public:
+  Atuador();
+
+/************************
+ abrir
+ Abre valvula conectada ao pino 10
+ entradas
+   nenhuma
+ saidas
+   nenhuma
+*************************/
+  
+  void abrir();
+  
+/************************
+ fechar
+ Fecha valvula conectada ao pino 10
+ entradas
+   nenhuma
+ saidas
+   nenhuma
+*************************/  
+  
+  void fechar();
+
+};
+// ======================================================================
+// atuador.cpp
+
+
+Atuador::Atuador()
+{
+}
+
+/************************
+ Atuador::abrir
+ abre valvula conectada ao pino 10
+ entradas
+   nenhuma
+ saidas
+   nenhuma
+*************************/
+
+void Atuador::abrir()
+{
+   // abre valvula
+   digitalWrite(10,HIGH);
+  
+   // atualiza serial monitor
+   Serial.println("Valvula aberta");
+  
+   // atualiza lcd
+   lcd.setCursor(0, 4);
+   lcd.print("Regando.");
+   delay(1200);
+   lcd.clear();
+   lcd.setCursor(0, 4);
+   lcd.print("Regando .");
+   delay(1200);
+   lcd.clear();
+   lcd.setCursor(0, 4);
+   lcd.print("Regando  .");
+   delay(1200);
+   lcd.clear();
+}
+
+/************************
+ Atuador::fechar
+ fecha valvula conectada ao pino 10
+ entradas
+   nenhuma
+ saidas
+   nenhuma
+*************************/
+
+void Atuador::fechar()
+{
+   digitalWrite(10, LOW);
+   lcd.print("Valvula fechada");
+   delay(2000);
+   lcd.clear();
+   
+   Serial.println("Valvula fechada");
+}
+
+// ======================================================================
+// sist_rega.ino
+
+
+
+
+/***********************************************************************
+ Componentes
+ ***********************************************************************/
+Display disp;
+Atuador act;
+Interface iui;
+Sensor sens;
+
+/***********************************************************************
+ Estaticos
+ ***********************************************************************/
+int codigoEvento = NENHUM_EVENTO;
+int eventoInterno = NENHUM_EVENTO;
+int estado = ESPERA;
+int codigoAcao;
+int acao_matrizTransicaoEstados[NUM_ESTADOS][NUM_EVENTOS];
+int proximo_estado_matrizTransicaoEstados[NUM_ESTADOS][NUM_EVENTOS];
+
+/************************************************************************
+ executarAcao
+ Executa uma acao
+ Parametros de entrada:
+    (int) codigo da acao a ser executada
+ Retorno: (int) codigo do evento interno ou NENHUM_EVENTO
+*************************************************************************/
+
+int executarAcao(int codigoAcao)
+{
+    int retval;
+    int umidadeAtual = sens.devolverUmidade(); 
+  
+    retval = NENHUM_EVENTO;
+    if (codigoAcao == NENHUMA_ACAO)
+        return retval;
+
+    switch(codigoAcao)
+    {
+    case EXIBIR:
+        disp.exibir(umidadeAtual);
+        break;
+    case PARAMETROS:
+        if (nova_umidade){
+          iui.setarUmidadePadrao(ideal_nova);
+          nova_umidade = false;
+        }
+        else {
+          iui.setarTempoRegas(deltaRega_novo);
+          novo_deltaRegas = false;
+        }
+        break;
+    case ABRIRDISPLAY:
+        act.abrir();
+        break;
+    case FECHAREXIBIR:
+        act.fechar();
+        disp.exibir(umidadeAtual);
+        break;
+    } // switch
+
+    return retval;
+} // executarAcao
+
+/************************************************************************
+ iniciaMaquina de Estados
+ Carrega a maquina de estados
+ Parametros de entrada: nenhum
+ Retorno: nenhum
+*************************************************************************/
+
+void iniciaMaquinaEstados()
+{
+  int i;
+  int j;
+
+  for (i=0; i < NUM_ESTADOS; i++) {
+    for (j=0; j < NUM_EVENTOS; j++) {
+       acao_matrizTransicaoEstados[i][j] = NENHUMA_ACAO;
+       proximo_estado_matrizTransicaoEstados[i][j] = i;
+    }
+  }
+  proximo_estado_matrizTransicaoEstados[ESPERA][UMIDADE_ACIMA] = ESPERA;
+  acao_matrizTransicaoEstados[ESPERA][UMIDADE_ACIMA] = EXIBIR;
+
+  proximo_estado_matrizTransicaoEstados[ESPERA][CONFIG] = ESPERA;
+  acao_matrizTransicaoEstados[ESPERA][CONFIG] = PARAMETROS;
+
+  proximo_estado_matrizTransicaoEstados[ESPERA][UMIDADE_ABAIXO] = REGA;
+  acao_matrizTransicaoEstados[ESPERA][UMIDADE_ABAIXO] = ABRIRDISPLAY;
+
+  proximo_estado_matrizTransicaoEstados[REGA][TERMINO] = ESPERA;
+  acao_matrizTransicaoEstados[REGA][TERMINO] = FECHAREXIBIR;
+
+
+} // initStateMachine
+
+/************************************************************************
+ iniciaSistema
+ Inicia o sistema ...
+ Parametros de entrada: nenhum
+ Retorno: nenhum
+*************************************************************************/
+
+void iniciaSistema()
+{
+   iniciaMaquinaEstados();
+} // initSystem
+
+
+/************************************************************************
+ obterEvento
+ Obtem um evento, que pode ser da IHM ou do alarme
+ Parametros de entrada: nenhum
+ Retorno: codigo do evento
+*************************************************************************/
+
+int obterEvento()
+{
+  int retval = NENHUM_EVENTO;
+  int um_atual = sens.devolverUmidade();
+  long dif = millis() - tempo_regando; 
+
+  
+  // implementacao do tempo entre emails
+  if (um_atual > umidade_padrao && (millis() - tempo_evento1) > delta_regas && digitalRead(10) == LOW){ 
+  tempo_evento1 = millis();
+    return UMIDADE_ACIMA;
+  }
+  // modo configuracao - se o valor da umidade ideal ou do tempo entre regas mudou
+  if ((nova_umidade || novo_deltaRegas) && digitalRead(10) == LOW){
+    return CONFIG;
+  }
+  // implementacao do tempo entre regas
+  if (um_atual <= umidade_padrao && (millis() - tempo_evento2) > delta_regas){ 
+    tempo_evento2 = millis();
+    tempo_regando = millis();
+    return UMIDADE_ABAIXO;
+  }
+  // regar ate umidade atual atingir umidade ideal
+  if (um_atual > umidade_padrao && digitalRead(10)== HIGH){ 
+    tempo_regando = 604800000; //valor de 1 semana representativo
+    return TERMINO;
+  }
+  return retval;
+
+} // obterEvento
+
+/************************************************************************
+ obterAcao
+ Obtem uma acao da Matriz de transicao de estados
+ Parametros de entrada: estado (int)
+                        evento (int)
+ Retorno: codigo da acao
+*************************************************************************/
+int obterAcao(int estado, int codigoEvento) {
+  return acao_matrizTransicaoEstados[estado][codigoEvento];
+} // obterAcao
+
+
+/************************************************************************
+ obterProximoEstado
+ Obtem o proximo estado da Matriz de transicao de estados
+ Parametros de entrada: estado (int)
+                        evento (int)
+ Retorno: codigo do estado
+*************************************************************************/
+int obterProximoEstado(int estado, int codigoEvento) {
+  return proximo_estado_matrizTransicaoEstados[estado][codigoEvento];
+} // obterAcao
+
+
+/************************************************************************
+ Main
+ Loop principal de controle que executa a maquina de estados
+ Parametros de entrada: nenhum
+ Retorno: nenhum
+*************************************************************************/
+
+void receberDados() {
+  arduinoMaster.receiveData(); 
+}
+
+void enviarDados() {
+  arduinoMaster.sendData(); 
+}
+
+void setup() {
+  Serial.begin(9600);
+  
+  arduinoMaster.begin(endereco);
+  arduinoMaster.onReceive(receberDados);
+  arduinoMaster.onRequest(enviarDados);
+  
+  pinMode(A0, INPUT);
+  pinMode(10, OUTPUT);
+
+  // Setup inicial do display - saudacao
+  lcd.begin(16, 2);
+  lcd.print(" Rega Automatica:");
+  lcd.setCursor(4, 1);
+  lcd.print(" Grupo D");
+  delay(2500);
+  lcd.clear();
+  lcd.print("Umidade ideal: ");
+  lcd.setCursor(7, 1);
+  lcd.print(umidade_padrao);
+  lcd.print("%");
+  delay(2500);
+  lcd.clear();
+  
+  iniciaSistema();
+  Serial.println("Sistema iniciado");
+  Serial.print("A umidade ideal configurada e: ");
+  Serial.print(umidade_padrao);
+  Serial.println("%");
+} // setup
+
+void loop() {
+  int umid_atual = sens.devolverUmidade();
+  disp.exibir(umid_atual);
+  
+  if (eventoInterno == NENHUM_EVENTO) {
+      codigoEvento = obterEvento();
+  } else {
+      codigoEvento = eventoInterno;
+  }
+  if (codigoEvento != NENHUM_EVENTO)
+  {
+      codigoAcao = obterAcao(estado, codigoEvento);
+      estado = obterProximoEstado(estado, codigoEvento);
+      eventoInterno = executarAcao(codigoAcao);
+      Serial.print("Estado: ");
+      Serial.print(estado);
+      Serial.print(" Evento: ");
+      Serial.print(codigoEvento);
+      Serial.print(" Acao: ");
+      Serial.println(codigoAcao);
+  }
+ 
+  // manda umidade atual via wifi para interface
+  arduinoMaster.varWireWrite(0, highByte(umid_atual));
+  arduinoMaster.varWireWrite(1, lowByte(umid_atual));
+
+  // recebe variaveis da interface por wifi
+  byte ideal_wifi = arduinoMaster.varWireRead(2);
+  byte aux = arduinoMaster.varWireRead(3);
+
+  // atualiza variaveis do sistema
+  deltaRega_novo = aux*1000;
+  ideal_nova = ideal_wifi;
+
+  // verifica se mudou a umidade ideal
+  if (ideal_nova != umidade_padrao){ 
+    nova_umidade = true;
+  }
+  
+  // verifica se mudou o tempo entre regas
+  if (deltaRega_novo != delta_regas){
+    novo_deltaRegas = true;
+  }
+
+  Serial.print("digitalread10");
+  Serial.println(digitalRead(10));
+  Serial.print("umidade wifi: ");
+  Serial.print(umidade_padrao);
+  Serial.println("%");
+  Serial.print("tempo regas novo: ");
+  Serial.print(delta_regas);
+  Serial.println("ms");
+} // loop
